@@ -36,7 +36,7 @@
             <div class="bg-gray-900 text-white p-1.5 rounded-md">
                 <i data-lucide="layout-template" class="w-[18px] h-[18px]"></i>
             </div>
-            <h1 class="font-semibold text-sm tracking-wide">AMAZON PLANNER <span class="text-gray-400 font-normal ml-1">HTML v1.1 (Real API)</span></h1>
+            <h1 class="font-semibold text-sm tracking-wide">AMAZON PLANNER <span class="text-gray-400 font-normal ml-1">HTML v1.3 (突破 CORS 版)</span></h1>
         </div>
         <div class="flex gap-4 text-sm">
             <button onclick="toggleApiModal(true)" class="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 transition-colors">
@@ -184,10 +184,16 @@
                     <label class="block text-xs font-medium text-gray-500 mb-1">Model Name</label>
                     <input type="text" id="api-model" placeholder="gpt-4o" class="w-full border border-gray-200 rounded p-2 text-sm focus:border-gray-900 outline-none" />
                 </div>
-                <div class="bg-blue-50 text-blue-800 p-3 rounded-lg text-xs flex gap-2">
-                    <i data-lucide="info" class="w-4 h-4 shrink-0"></i>
-                    <p>提示：支持 OpenAI、DeepSeek 或代理商接口。请确保接口支持 JSON Object 输出模式。</p>
+                
+                <!-- 新增：强制跨域代理开关 -->
+                <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 p-3 rounded-lg">
+                    <input type="checkbox" id="api-use-proxy" class="mt-0.5 rounded text-amber-600 focus:ring-amber-500" />
+                    <div>
+                        <label for="api-use-proxy" class="block text-xs font-bold text-amber-800 mb-1 cursor-pointer">⚡️ 启用跨域代理 (解决 Failed to fetch)</label>
+                        <p class="text-[10px] text-amber-700 leading-relaxed">当您在 GitHub Pages 上使用官方直连报错时，请勾选此项。它将通过公共代理服务器 (corsproxy.io) 转发请求以突破限制。</p>
+                    </div>
                 </div>
+
             </div>
             <div class="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
                 <button onclick="toggleApiModal(false); saveApiConfig();" class="bg-gray-900 text-white text-sm px-4 py-2 rounded-md hover:bg-gray-800">保存设置</button>
@@ -209,7 +215,6 @@
             { id: 'minimal', label: 'Minimal 密度', text: 'Use a refined minimal Amazon layout with fewer callouts, generous balanced spacing, light icon or line treatment, and restrained US-English copy.' }
         ];
 
-        // A+ 默认模块槽位结构定义
         const APLUS_SLOTS = {
             'standard': ['A+S01 Header Banner 970x300', 'A+S02 Single Image 970x600', 'A+S03 Single Image 970x600', 'A+S04 Highlight Tile 220x220', 'A+S05 Highlight Tile 220x220'],
             'standard-large': ['A+L01 Header Banner 970x300', 'A+L02 Single Image 970x600', 'A+L03 Single Image 970x600', 'A+L04 Single Image 970x600'],
@@ -221,22 +226,22 @@
             mode: 'listing', listingCount: 7, isGenerating: false, generatedData: null,
             selectedSlotIndex: 0, selectedStyleId: 'clean-tech', densityId: 'rich',
             currentPromptData: { positive: '', negative: '' },
-            apiConfig: { apiUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o' }
+            apiConfig: { apiUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o', useProxy: false }
         };
 
         function init() {
-            // 从本地加载 API 配置
             const savedConfig = localStorage.getItem('amzPlannerApiConfig');
             if (savedConfig) {
                 const parsed = JSON.parse(savedConfig);
-                // 兼容老版本的 baseUrl，自动拼接为完整 URL
                 state.apiConfig.apiUrl = parsed.apiUrl || (parsed.baseUrl ? parsed.baseUrl.replace(/\/$/, "") + '/chat/completions' : 'https://api.openai.com/v1/chat/completions');
                 state.apiConfig.apiKey = parsed.apiKey || '';
                 state.apiConfig.model = parsed.model || 'gpt-4o';
+                state.apiConfig.useProxy = !!parsed.useProxy;
             }
             document.getElementById('api-url').value = state.apiConfig.apiUrl;
             document.getElementById('api-key').value = state.apiConfig.apiKey;
             document.getElementById('api-model').value = state.apiConfig.model;
+            document.getElementById('api-use-proxy').checked = state.apiConfig.useProxy;
             
             renderStyleButtons();
             renderDensityButtons();
@@ -246,11 +251,10 @@
         function toggleApiModal(show) { document.getElementById('modal-api').style.display = show ? 'flex' : 'none'; }
         
         function saveApiConfig() {
-            // 加入了 .trim() 以去除复制粘贴时不小心带上的多余空格或换行
             state.apiConfig.apiUrl = document.getElementById('api-url').value.trim(); 
             state.apiConfig.apiKey = document.getElementById('api-key').value.trim();
             state.apiConfig.model = document.getElementById('api-model').value.trim();
-            
+            state.apiConfig.useProxy = document.getElementById('api-use-proxy').checked;
             localStorage.setItem('amzPlannerApiConfig', JSON.stringify(state.apiConfig));
         }
 
@@ -267,7 +271,6 @@
             lucide.createIcons();
         }
 
-        // --- 核心 AI Prompt 构建引擎 ---
         function buildSystemPrompt() {
             const title = document.getElementById('input-fact-title').value || '未提供';
             const brand = document.getElementById('input-fact-brand').value || '未提供';
@@ -309,14 +312,12 @@ Listing Text to parse:
 ${listingText}`;
         }
 
-        // --- 核心网络请求逻辑 (真实 API) ---
         async function handleGenerate() {
             if (!document.getElementById('input-listing-text').value.trim()) { alert("请至少输入原文信息"); return; }
             if (!state.apiConfig.apiKey) { toggleApiModal(true); alert("请先配置 API Key"); return; }
 
-            // 简单的防呆检查：提示用户可能填成了文件名或其他无关键词
             if (state.apiConfig.apiKey.includes('amazon-') || !state.apiConfig.apiKey.includes('-')) {
-                 if(!confirm("⚠️ 提示：您输入的 API Key 看起来不像是标准的凭证（如 sk-... 格式）。是否继续尝试发送？")) return;
+                 if(!confirm("⚠️ 提示：您输入的 API Key 看起来不像是标准的凭证。是否继续尝试发送？")) return;
             }
 
             state.isGenerating = true; updateMiddlePanel();
@@ -330,7 +331,13 @@ ${listingText}`;
                 const systemPrompt = buildSystemPrompt();
                 const userPrompt = buildUserPrompt();
 
-                const response = await fetch(state.apiConfig.apiUrl, {
+                // 核心改动：如果启用了跨域代理，就通过 corsproxy.io 转发
+                let finalUrl = state.apiConfig.apiUrl;
+                if (state.apiConfig.useProxy) {
+                    finalUrl = 'https://corsproxy.io/?' + encodeURIComponent(finalUrl);
+                }
+
+                const response = await fetch(finalUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -342,7 +349,7 @@ ${listingText}`;
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userPrompt }
                         ],
-                        response_format: { type: "json_object" } // 强制输出 JSON
+                        response_format: { type: "json_object" } 
                     })
                 });
 
@@ -353,13 +360,19 @@ ${listingText}`;
 
                 const data = await response.json();
                 const contentStr = data.choices[0].message.content;
-                state.generatedData = JSON.parse(contentStr); // 解析 AI 返回的 JSON 结构
+                state.generatedData = JSON.parse(contentStr); 
 
                 state.selectedSlotIndex = 0;
 
             } catch (error) {
-                console.error(error);
-                alert("生成失败，可能的原因：\n1. API Key 或 URL 配置错误\n2. 网络代理问题 (CORS拦截)\n3. 模型不支持 json_object 输出\n\n详情: " + error.message);
+                console.error("生成异常捕获：", error);
+                
+                let extraCORSInfo = "";
+                if (error.message.includes("Failed to fetch")) {
+                    extraCORSInfo = "\n\n🚨 浏览器仍然拦截了请求！\n\n请点击右上角的 [API 配置]，勾选【⚡️ 启用跨域代理】后再试一次！";
+                }
+
+                alert("生成失败！\n\n原始错误详情: " + error.message + extraCORSInfo);
                 state.generatedData = null;
             } finally {
                 state.isGenerating = false;
@@ -470,7 +483,6 @@ ${listingText}`;
 
             slotTitle.innerText = `(${currentPlan.slot})`;
 
-            // 组装 Prompt
             const isMain = currentPlan.slot === 'MAIN';
             const posParts = [currentPlan.prompt];
 

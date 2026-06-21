@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon 提示词策划工作台 (API 真实版)</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Lucide 图标库 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        .selected-card { border-color: #111827 !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important; transform: translateY(-2px); }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans h-screen flex flex-col overflow-hidden selection:bg-gray-200">
+
+    <!-- 顶部导航 -->
+    <header class="h-14 border-b border-gray-200 bg-white flex items-center px-5 justify-between shrink-0 z-20">
+        <div class="flex items-center gap-3">
+            <div class="bg-gray-900 text-white p-1.5 rounded-md">
+                <i data-lucide="layout-template" class="w-[18px] h-[18px]"></i>
+            </div>
+            <h1 class="font-semibold text-sm tracking-wide">AMAZON PLANNER <span class="text-gray-400 font-normal ml-1">HTML v1.1 (Real API)</span></h1>
+        </div>
+        <div class="flex gap-4 text-sm">
+            <button onclick="toggleApiModal(true)" class="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 transition-colors">
+                <i data-lucide="settings" class="w-4 h-4"></i> API 配置
+            </button>
+        </div>
+    </header>
+
+    <!-- 主工作区 -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- 左侧：输入区 -->
+        <section class="w-1/4 min-w-[320px] max-w-[400px] bg-white border-r border-gray-200 overflow-y-auto flex flex-col">
+            <div class="p-5 space-y-6">
+                <!-- 模式切换 -->
+                <div class="bg-gray-100 p-1 rounded-lg flex text-sm font-medium">
+                    <button id="btn-mode-listing" onclick="setMode('listing')" class="flex-1 py-1.5 rounded-md text-center transition-all flex items-center justify-center gap-2 bg-white shadow-sm text-gray-900">
+                        <i data-lucide="image" class="w-4 h-4"></i> Listing 图
+                    </button>
+                    <button id="btn-mode-aplus" onclick="setMode('aplus')" class="flex-1 py-1.5 rounded-md text-center transition-all flex items-center justify-center gap-2 text-gray-500 hover:text-gray-700">
+                        <i data-lucide="layout-grid" class="w-4 h-4"></i> A+ 模块
+                    </button>
+                </div>
+
+                <!-- 参数配置 -->
+                <div id="config-listing">
+                    <div class="flex justify-between mb-1.5">
+                        <label class="text-xs font-medium text-gray-500">图片数量</label>
+                        <span id="label-listing-count" class="text-xs font-medium text-gray-900">7 张</span>
+                    </div>
+                    <input type="range" id="input-listing-count" min="7" max="12" value="7" oninput="updateListingCount(this.value)" class="w-full accent-gray-900" />
+                </div>
+                
+                <div id="config-aplus" class="hidden">
+                    <label class="block text-xs font-medium text-gray-500 mb-1.5">A+ 类型</label>
+                    <select id="input-aplus-type" class="w-full border border-gray-200 rounded-md p-2 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:border-gray-400">
+                        <option value="standard">标准 A+</option>
+                        <option value="standard-large">普通 A+</option>
+                        <option value="premium">高级 A+</option>
+                        <option value="mobile">手机 A+</option>
+                    </select>
+                </div>
+
+                <hr class="border-gray-100" />
+
+                <!-- 文本输入 -->
+                <div class="space-y-4 flex-1">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1.5">基础属性 (简写以辅助 AI)</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="text" id="input-fact-title" placeholder="商品标题/型号" class="border border-gray-200 rounded p-2 text-xs bg-gray-50 focus:bg-white outline-none" />
+                            <input type="text" id="input-fact-brand" placeholder="品牌" class="border border-gray-200 rounded p-2 text-xs bg-gray-50 focus:bg-white outline-none" />
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-col h-[280px]">
+                        <label class="block text-xs font-medium text-gray-500 mb-1.5">原文信息</label>
+                        <textarea id="input-listing-text" class="w-full flex-1 p-3 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-gray-400 focus:bg-white transition-all resize-none" placeholder="在此粘贴相关文案...\n\nAI 将根据这些信息策划视觉方案。"></textarea>
+                    </div>
+                </div>
+
+                <button id="btn-generate" onclick="handleGenerate()" class="w-full font-medium text-sm py-2.5 rounded-md transition-all flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 shadow-sm">
+                    <i data-lucide="play" class="w-4 h-4 fill-current"></i> 开始 AI 策划
+                </button>
+            </div>
+        </section>
+
+        <!-- 中间：策划结果卡片区 -->
+        <section class="flex-1 bg-[#fbfbfb] overflow-y-auto p-6 flex flex-col relative shadow-inner">
+            <div class="max-w-3xl w-full mx-auto">
+                <div class="flex items-center justify-between mb-4 sticky top-0 bg-[#fbfbfb] py-2 z-10 border-b border-gray-100">
+                    <h2 class="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-4 h-4 text-gray-500"></i>
+                        <span id="middle-title">Listing 策划方案</span>
+                        <span id="middle-count" class="hidden text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full"></span>
+                    </h2>
+                </div>
+                <div id="middle-content">
+                    <div class="flex flex-col items-center justify-center h-64 text-gray-400">
+                        <i data-lucide="layout-template" class="w-12 h-12 mb-4 opacity-50 stroke-1"></i>
+                        <p class="text-sm">在左侧输入信息并生成策划方案</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 右侧：Final Prompt 组装区 -->
+        <section class="w-[30%] min-w-[350px] max-w-[450px] bg-white border-l border-gray-200 overflow-y-auto flex flex-col">
+            <div class="p-5 border-b border-gray-100 bg-gray-50 shrink-0">
+                <div class="flex items-center justify-between mb-3">
+                    <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Style & Density</label>
+                </div>
+                <div id="style-buttons" class="grid grid-cols-2 gap-2 mb-4"></div>
+                <div id="density-buttons" class="flex gap-4 p-1 bg-gray-200/50 rounded-lg"></div>
+            </div>
+            <div class="p-5 flex-1 flex flex-col min-h-0 gap-4">
+                <div class="flex-1 flex flex-col min-h-0">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-gray-900">Prompt <span id="prompt-slot-title" class="text-gray-500 font-normal ml-1">(未选择)</span></h3>
+                        <button id="btn-copy-pos" onclick="copyPrompt('positive')" class="text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all text-gray-400 bg-gray-100 cursor-not-allowed">
+                            <i data-lucide="copy" class="w-[14px] h-[14px]"></i> <span>复制</span>
+                        </button>
+                    </div>
+                    <div class="flex-1 bg-[#1e1e1e] rounded-xl p-3.5 overflow-y-auto relative shadow-inner custom-scrollbar">
+                        <pre id="text-pos-prompt" class="text-[13px] text-gray-300 font-mono whitespace-pre-wrap leading-relaxed h-full flex flex-col justify-center italic text-gray-600 text-center">等待生成方案...</pre>
+                    </div>
+                </div>
+                <div id="container-neg-prompt" class="hidden h-1/3 min-h-[120px] flex flex-col">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-gray-900">Negative Prompt</h3>
+                        <button id="btn-copy-neg" onclick="copyPrompt('negative')" class="text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200">
+                            <i data-lucide="copy" class="w-[14px] h-[14px]"></i> <span>复制</span>
+                        </button>
+                    </div>
+                    <div class="flex-1 bg-[#2d2d2d] rounded-xl p-3.5 overflow-y-auto relative shadow-inner custom-scrollbar border border-gray-800">
+                        <pre id="text-neg-prompt" class="text-[13px] text-red-200/80 font-mono whitespace-pre-wrap leading-relaxed"></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 弹窗：API 配置 -->
+    <div id="modal-api" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div class="bg-white w-96 rounded-xl shadow-2xl overflow-hidden">
+            <div class="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                <h3 class="font-semibold text-sm">AI 策划 API 配置</h3>
+                <button onclick="toggleApiModal(false); saveApiConfig();" class="text-gray-400 hover:text-gray-900">&times;</button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">API URL (完整请求地址)</label>
+                    <input type="text" id="api-url" placeholder="https://api.openai.com/v1/chat/completions" class="w-full border border-gray-200 rounded p-2 text-sm focus:border-gray-900 outline-none" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">API Key</label>
+                    <div class="relative">
+                        <input type="password" id="api-key" placeholder="sk-..." class="w-full border border-gray-200 rounded p-2 text-sm focus:border-gray-900 outline-none pr-10" />
+                        <button type="button" onclick="toggleApiKeyVisibility()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none">
+                            <i data-lucide="eye" id="eye-icon" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Model Name</label>
+                    <input type="text" id="api-model" placeholder="gpt-4o" class="w-full border border-gray-200 rounded p-2 text-sm focus:border-gray-900 outline-none" />
+                </div>
+                <div class="bg-blue-50 text-blue-800 p-3 rounded-lg text-xs flex gap-2">
+                    <i data-lucide="info" class="w-4 h-4 shrink-0"></i>
+                    <p>提示：支持 OpenAI、DeepSeek 或代理商接口。请确保接口支持 JSON Object 输出模式。</p>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+                <button onclick="toggleApiModal(false); saveApiConfig();" class="bg-gray-900 text-white text-sm px-4 py-2 rounded-md hover:bg-gray-800">保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 静态数据 ---
+        const STYLE_PRESETS = [
+            { id: 'clean-tech', name: '清爽科技', en: 'Clean Tech', direction: 'Crisp, bright, high-tech studio lighting, neutral cool tones.', palette: 'White, silver, cool gray.' },
+            { id: 'natural-warm', name: '自然暖调', en: 'Natural Warm', direction: 'Soft natural sunlight, warm organic tones.', palette: 'Cream, warm wood tones, beige.' },
+            { id: 'premium-contrast', name: '高级对比', en: 'Premium Contrast', direction: 'High-contrast studio lighting, moody shadows.', palette: 'Deep black, charcoal, metallic.' },
+            { id: 'bright-retail', name: '明亮零售', en: 'Bright Retail', direction: 'Even, bright e-commerce lighting, highly legible.', palette: 'Pure white background, vibrant colors.' }
+        ];
+
+        const DENSITY_MODES = [
+            { id: 'rich', label: 'Rich 密度', text: 'Use a polished, information-rich Amazon gallery layout... Build clear hierarchy with mobile-readable US-English copy, multiple well-spaced callouts...' },
+            { id: 'minimal', label: 'Minimal 密度', text: 'Use a refined minimal Amazon layout with fewer callouts, generous balanced spacing, light icon or line treatment, and restrained US-English copy.' }
+        ];
+
+        // A+ 默认模块槽位结构定义
+        const APLUS_SLOTS = {
+            'standard': ['A+S01 Header Banner 970x300', 'A+S02 Single Image 970x600', 'A+S03 Single Image 970x600', 'A+S04 Highlight Tile 220x220', 'A+S05 Highlight Tile 220x220'],
+            'standard-large': ['A+L01 Header Banner 970x300', 'A+L02 Single Image 970x600', 'A+L03 Single Image 970x600', 'A+L04 Single Image 970x600'],
+            'premium': ['A+P01 Hero Banner 1464x600', 'A+P02 Feature Image 970x600', 'A+P03 Feature Image 970x600', 'A+P04 Brand Story 463x625'],
+            'mobile': ['A+M01 Mobile Hero 600x450', 'A+M02 Mobile Feature 600x450', 'A+M03 Mobile Feature 600x450']
+        };
+
+        const state = {
+            mode: 'listing', listingCount: 7, isGenerating: false, generatedData: null,
+            selectedSlotIndex: 0, selectedStyleId: 'clean-tech', densityId: 'rich',
+            currentPromptData: { positive: '', negative: '' },
+            apiConfig: { apiUrl: 'https://api.openai.com/v1/chat/completions', apiKey: '', model: 'gpt-4o' }
+        };
+
+        function init() {
+            // 从本地加载 API 配置
+            const savedConfig = localStorage.getItem('amzPlannerApiConfig');
+            if (savedConfig) {
+                const parsed = JSON.parse(savedConfig);
+                // 兼容老版本的 baseUrl，自动拼接为完整 URL
+                state.apiConfig.apiUrl = parsed.apiUrl || (parsed.baseUrl ? parsed.baseUrl.replace(/\/$/, "") + '/chat/completions' : 'https://api.openai.com/v1/chat/completions');
+                state.apiConfig.apiKey = parsed.apiKey || '';
+                state.apiConfig.model = parsed.model || 'gpt-4o';
+            }
+            document.getElementById('api-url').value = state.apiConfig.apiUrl;
+            document.getElementById('api-key').value = state.apiConfig.apiKey;
+            document.getElementById('api-model').value = state.apiConfig.model;
+            
+            renderStyleButtons();
+            renderDensityButtons();
+            lucide.createIcons();
+        }
+
+        function toggleApiModal(show) { document.getElementById('modal-api').style.display = show ? 'flex' : 'none'; }
+        
+        function saveApiConfig() {
+            // 加入了 .trim() 以去除复制粘贴时不小心带上的多余空格或换行
+            state.apiConfig.apiUrl = document.getElementById('api-url').value.trim(); 
+            state.apiConfig.apiKey = document.getElementById('api-key').value.trim();
+            state.apiConfig.model = document.getElementById('api-model').value.trim();
+            
+            localStorage.setItem('amzPlannerApiConfig', JSON.stringify(state.apiConfig));
+        }
+
+        function toggleApiKeyVisibility() {
+            const input = document.getElementById('api-key');
+            const icon = document.getElementById('eye-icon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.setAttribute('data-lucide', 'eye-off');
+            } else {
+                input.type = 'password';
+                icon.setAttribute('data-lucide', 'eye');
+            }
+            lucide.createIcons();
+        }
+
+        // --- 核心 AI Prompt 构建引擎 ---
+        function buildSystemPrompt() {
+            const title = document.getElementById('input-fact-title').value || '未提供';
+            const brand = document.getElementById('input-fact-brand').value || '未提供';
+            
+            if (state.mode === 'listing') {
+                const slots = ['MAIN', ...Array.from({length: state.listingCount - 1}, (_, i) => `PT${String(i+1).padStart(2, '0')}`)].join(', ');
+                return `You are an Amazon image-planning agent. The user provides listing copy.
+Create a complete visual plan for exactly ${state.listingCount} Amazon listing image slots: ${slots}.
+The application only fixes the slot count and order. You must decide the strategy, composition, copy approach, visual treatment, prompt content, and negative prompt content.
+For each slot, write planMarkdown in Simplified Chinese, then write a professional English image prompt and English negative prompt.
+Return JSON with: product { title, category, color, material, audience, packageIncludes }, sellingPoints string[], seriesStyleGuide string, imagePlans array.
+imagePlans must contain exactly ${state.listingCount} items in this order: ${slots}.
+Each imagePlans item must include: slot, label(Simplified Chinese), planMarkdown(Simplified Chinese), prompt(English), negativePrompt(English).
+Return a valid JSON object only.`;
+            } else {
+                const aplusTypeStr = document.getElementById('input-aplus-type').value;
+                const modules = APLUS_SLOTS[aplusTypeStr].join('; ');
+                const moduleCount = APLUS_SLOTS[aplusTypeStr].length;
+                return `You are an Amazon A+ Content image-planning agent.
+Create a ${aplusTypeStr} image module plan. Return exactly ${moduleCount} modules in this order: ${modules}
+For each module, write planMarkdown in Simplified Chinese, then write a professional English image prompt and English negative prompt.
+Return JSON with: product { title, category, color, material, audience, packageIncludes }, sellingPoints string[], seriesStyleGuide string, aPlusPlans array.
+aPlusPlans must contain exactly ${moduleCount} items.
+Each aPlusPlans item must include: slot, label(Simplified Chinese), moduleType, planMarkdown(Simplified Chinese), textTitle(English or empty), textBody(English or empty), prompt(English), negativePrompt(English).
+Known brand/model: ${brand}. If no real brand/model is provided, do not invent a brand name or logo.
+Return a valid JSON object only.`;
+            }
+        }
+
+        function buildUserPrompt() {
+            const listingText = document.getElementById('input-listing-text').value;
+            const title = document.getElementById('input-fact-title').value;
+            const brand = document.getElementById('input-fact-brand').value;
+            return `User-provided product facts:
+- Product title: ${title}
+- Brand or model: ${brand}
+
+Listing Text to parse:
+${listingText}`;
+        }
+
+        // --- 核心网络请求逻辑 (真实 API) ---
+        async function handleGenerate() {
+            if (!document.getElementById('input-listing-text').value.trim()) { alert("请至少输入原文信息"); return; }
+            if (!state.apiConfig.apiKey) { toggleApiModal(true); alert("请先配置 API Key"); return; }
+
+            // 简单的防呆检查：提示用户可能填成了文件名或其他无关键词
+            if (state.apiConfig.apiKey.includes('amazon-') || !state.apiConfig.apiKey.includes('-')) {
+                 if(!confirm("⚠️ 提示：您输入的 API Key 看起来不像是标准的凭证（如 sk-... 格式）。是否继续尝试发送？")) return;
+            }
+
+            state.isGenerating = true; updateMiddlePanel();
+            const btn = document.getElementById('btn-generate');
+            btn.innerHTML = '<i data-lucide="refresh-cw" class="w-4 h-4 animate-spin"></i> 请求 AI 策划中...';
+            btn.classList.replace('bg-gray-900', 'bg-gray-400');
+            btn.classList.add('cursor-not-allowed');
+            lucide.createIcons();
+
+            try {
+                const systemPrompt = buildSystemPrompt();
+                const userPrompt = buildUserPrompt();
+
+                const response = await fetch(state.apiConfig.apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${state.apiConfig.apiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: state.apiConfig.model,
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ],
+                        response_format: { type: "json_object" } // 强制输出 JSON
+                    })
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`API Error ${response.status}: ${errText}`);
+                }
+
+                const data = await response.json();
+                const contentStr = data.choices[0].message.content;
+                state.generatedData = JSON.parse(contentStr); // 解析 AI 返回的 JSON 结构
+
+                state.selectedSlotIndex = 0;
+
+            } catch (error) {
+                console.error(error);
+                alert("生成失败，可能的原因：\n1. API Key 或 URL 配置错误\n2. 网络代理问题 (CORS拦截)\n3. 模型不支持 json_object 输出\n\n详情: " + error.message);
+                state.generatedData = null;
+            } finally {
+                state.isGenerating = false;
+                btn.innerHTML = '<i data-lucide="play" class="w-4 h-4 fill-current"></i> 开始 AI 策划';
+                btn.classList.replace('bg-gray-400', 'bg-gray-900');
+                btn.classList.remove('cursor-not-allowed');
+                updateMiddlePanel();
+                updateRightPanel();
+                lucide.createIcons();
+            }
+        }
+
+        // --- 其他视图控制与组装逻辑 ---
+        function setMode(mode) {
+            state.mode = mode; state.generatedData = null;
+            document.getElementById('btn-mode-listing').className = mode === 'listing' ? 'flex-1 py-1.5 rounded-md text-center transition-all flex items-center justify-center gap-2 bg-white shadow-sm text-gray-900' : 'flex-1 py-1.5 rounded-md text-center transition-all flex items-center justify-center gap-2 text-gray-500 hover:text-gray-700';
+            document.getElementById('btn-mode-aplus').className = mode === 'aplus' ? 'flex-1 py-1.5 rounded-md text-center transition-all flex items-center justify-center gap-2 bg-white shadow-sm text-gray-900' : 'flex-1 py-1.5 rounded-md text-center transition-all flex items-center justify-center gap-2 text-gray-500 hover:text-gray-700';
+            document.getElementById('config-listing').style.display = mode === 'listing' ? 'block' : 'none';
+            document.getElementById('config-aplus').style.display = mode === 'aplus' ? 'block' : 'none';
+            document.getElementById('middle-title').innerText = mode === 'listing' ? 'Listing 策划方案' : 'A+ 模块策划方案';
+            document.getElementById('middle-count').classList.add('hidden');
+            updateMiddlePanel(); updateRightPanel();
+        }
+
+        function updateListingCount(val) { state.listingCount = parseInt(val); document.getElementById('label-listing-count').innerText = `${val} 张`; }
+        function setStyle(id) { state.selectedStyleId = id; renderStyleButtons(); updateRightPanel(); }
+        function setDensity(id) { state.densityId = id; renderDensityButtons(); updateRightPanel(); }
+        function selectSlot(index) { state.selectedSlotIndex = index; renderCards(); updateRightPanel(); }
+
+        function renderStyleButtons() {
+            document.getElementById('style-buttons').innerHTML = STYLE_PRESETS.map(preset => {
+                const isActive = state.selectedStyleId === preset.id;
+                const cls = isActive ? 'border-gray-900 bg-white shadow-sm font-semibold text-gray-900' : 'border-gray-200 bg-transparent text-gray-500 hover:border-gray-300';
+                return `<button onclick="setStyle('${preset.id}')" class="text-xs py-2 px-3 rounded-md border text-left transition-all ${cls}">${preset.name}</button>`;
+            }).join('');
+        }
+
+        function renderDensityButtons() {
+            document.getElementById('density-buttons').innerHTML = DENSITY_MODES.map(mode => {
+                const isActive = state.densityId === mode.id;
+                const cls = isActive ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700';
+                return `<button onclick="setDensity('${mode.id}')" class="flex-1 text-xs py-1.5 rounded-md transition-all font-medium ${cls}">${mode.label}</button>`;
+            }).join('');
+        }
+
+        function updateMiddlePanel() {
+            const contentDiv = document.getElementById('middle-content');
+            if (state.isGenerating) {
+                let skeletons = '';
+                for(let i=0; i<3; i++) skeletons += `<div class="bg-white border border-gray-100 rounded-xl p-5 shadow-sm animate-pulse flex flex-col gap-3 mb-4"><div class="h-4 bg-gray-200 rounded w-1/4"></div><div class="h-3 bg-gray-100 rounded w-full"></div><div class="h-3 bg-gray-100 rounded w-5/6"></div></div>`;
+                contentDiv.innerHTML = `<div class="space-y-4">${skeletons}</div>`;
+                return;
+            }
+            if (!state.generatedData) {
+                contentDiv.innerHTML = `<div class="flex flex-col items-center justify-center h-64 text-gray-400"><i data-lucide="layout-template" class="w-12 h-12 mb-4 opacity-50 stroke-1"></i><p class="text-sm">在左侧输入信息并生成策划方案</p></div>`;
+                lucide.createIcons(); return;
+            }
+            renderCards();
+        }
+
+        function renderCards() {
+            const plans = state.mode === 'listing' ? state.generatedData.imagePlans : state.generatedData.aPlusPlans;
+            if(!plans) return;
+            
+            document.getElementById('middle-count').innerText = plans.length;
+            document.getElementById('middle-count').classList.remove('hidden');
+
+            const html = plans.map((plan, index) => {
+                const isSelected = state.selectedSlotIndex === index;
+                const borderCls = isSelected ? 'selected-card border-gray-900 border-2' : 'border-transparent border-gray-200 border hover:border-gray-300';
+                const tagCls = plan.slot === 'MAIN' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700';
+                let extraTag = plan.moduleType ? `<span class="text-xs text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full bg-gray-50">${plan.moduleType}</span>` : '';
+
+                return `
+                <div onclick="selectSlot(${index})" class="bg-white rounded-xl p-5 cursor-pointer transition-all mb-4 ${borderCls}">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold px-2 py-1 rounded tracking-wider ${tagCls}">${plan.slot || `IMG-0${index}`}</span>
+                            <span class="text-sm font-semibold text-gray-900">${plan.label || '新卡片'}</span>
+                        </div>
+                        ${extraTag}
+                    </div>
+                    <div class="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed mt-4 bg-gray-50 p-4 rounded-lg border border-gray-100">${plan.planMarkdown || ''}</div>
+                </div>`;
+            }).join('');
+            document.getElementById('middle-content').innerHTML = `<div class="space-y-4 pb-10">${html}</div>`;
+        }
+
+        function updateRightPanel() {
+            const plans = state.generatedData ? (state.mode === 'listing' ? state.generatedData.imagePlans : state.generatedData.aPlusPlans) : [];
+            const currentPlan = plans ? plans[state.selectedSlotIndex] : null;
+
+            const posPre = document.getElementById('text-pos-prompt');
+            const negPre = document.getElementById('text-neg-prompt');
+            const negContainer = document.getElementById('container-neg-prompt');
+            const btnPos = document.getElementById('btn-copy-pos');
+            const slotTitle = document.getElementById('prompt-slot-title');
+
+            if (!currentPlan) {
+                posPre.innerHTML = '等待生成方案...';
+                posPre.className = 'text-[13px] text-gray-300 font-mono whitespace-pre-wrap leading-relaxed h-full flex flex-col justify-center italic text-gray-600 text-center';
+                negContainer.style.display = 'none';
+                slotTitle.innerText = '(未选择)';
+                state.currentPromptData = { positive: '', negative: '' };
+                btnPos.className = 'text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all text-gray-400 bg-gray-100 cursor-not-allowed';
+                return;
+            }
+
+            slotTitle.innerText = `(${currentPlan.slot})`;
+
+            // 组装 Prompt
+            const isMain = currentPlan.slot === 'MAIN';
+            const posParts = [currentPlan.prompt];
+
+            if (!isMain) {
+                posParts.push('\n\nSelected visual style (highest priority):');
+                const style = STYLE_PRESETS.find(s => s.id === state.selectedStyleId);
+                if (style) {
+                    posParts.push(`- Style reference: ${style.name} (${style.en}).`);
+                    posParts.push(`- Style direction: ${style.direction}`);
+                    posParts.push(`- Palette anchors: ${style.palette}.`);
+                    posParts.push(`- This selected visual style is the highest-priority visual system for background, palette, typography...`);
+                }
+                posParts.push('\n\nSeries style guide (lower priority than the selected visual style):');
+                posParts.push(state.generatedData.seriesStyleGuide || 'Maintain visual consistency across the series.');
+                posParts.push('\n\nLayout density:');
+                const densityConfig = DENSITY_MODES.find(d => d.id === state.densityId);
+                posParts.push(densityConfig?.text || '');
+            }
+
+            state.currentPromptData = { positive: posParts.join(''), negative: currentPlan.negativePrompt || '' };
+
+            posPre.innerText = state.currentPromptData.positive;
+            posPre.className = 'text-[13px] text-gray-300 font-mono whitespace-pre-wrap leading-relaxed';
+            btnPos.className = 'text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all bg-gray-900 text-white hover:bg-gray-800 cursor-pointer';
+
+            if (state.currentPromptData.negative) {
+                negContainer.style.display = 'flex';
+                negPre.innerText = state.currentPromptData.negative;
+            } else {
+                negContainer.style.display = 'none';
+            }
+        }
+
+        function copyPrompt(type) {
+            if (!state.currentPromptData[type]) return;
+            navigator.clipboard.writeText(state.currentPromptData[type]).then(() => {
+                const btnId = type === 'positive' ? 'btn-copy-pos' : 'btn-copy-neg';
+                const btn = document.getElementById(btnId);
+                const originalHtml = btn.innerHTML;
+                const originalClass = btn.className;
+
+                btn.innerHTML = `<i data-lucide="check" class="w-[14px] h-[14px]"></i> <span>已复制</span>`;
+                btn.className = `text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all bg-green-100 text-green-700`;
+                lucide.createIcons();
+
+                setTimeout(() => { btn.innerHTML = originalHtml; btn.className = originalClass; lucide.createIcons(); }, 2000);
+            });
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
